@@ -26,9 +26,9 @@ jobs:
           mkdir -p packaging/Payload
           ditto "$APP" packaging/Payload/NetPulse.app
           cd packaging
-          zip -qr ../NetPulse-0.0.1-unsigned.ipa Payload
+          zip -qr ../NetPulse-0.0.2-unsigned.ipa Payload
       - uses: actions/upload-artifact@v4
         with:
           name: NetPulse-unsigned-IPA
-          path: NetPulse-0.0.1-unsigned.ipa
+          path: NetPulse-0.0.2-unsigned.ipa
           if-no-files-found: error

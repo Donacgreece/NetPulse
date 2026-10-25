@@ -11,7 +11,6 @@ settings:
     INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
     INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
     INFOPLIST_KEY_UILaunchScreen_Generation: YES
-    INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: "Not used"
 targets:
   NetPulse:
     type: application
@@ -21,7 +20,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.netpulse.ios
-        MARKETING_VERSION: 0.0.1
-        CURRENT_PROJECT_VERSION: 1
+        MARKETING_VERSION: 0.0.2
+        CURRENT_PROJECT_VERSION: 2
         INFOPLIST_KEY_CFBundleDisplayName: NetPulse
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: "NetPulse tests connections to network devices that you specify."

@@ -1,36 +1,31 @@
-# NetPulse 0.0.1
+# NetPulse 0.0.2
 
-Native iPhone network diagnostics. SwiftUI, Network.framework, Foundation.
+Native SwiftUI one-tap wired Ethernet diagnostic app for iPhone 15 and later with a compatible USB-C Ethernet adapter.
 
-## Features
-- Live path monitoring and detection of active wired Ethernet routing
-- IPv4/IPv6 addresses from getifaddrs
-- DNS resolution with getaddrinfo
-- TCP connectivity with NWConnection, 7-second timeout
-- HTTPS connectivity check using URLSession
-- Local persistent test history and shareable text report
-- Native system dynamic colors, accessibility labels and SF Symbols
+## What Check actually does
 
-## Build
-Requires macOS, Xcode 16 or newer, and XcodeGen (`brew install xcodegen`).
-1. Run `xcodegen generate` in this directory.
-2. Open `NetPulse.xcodeproj` in Xcode.
-3. Select the NetPulse target > Signing & Capabilities, choose your Apple development team and a unique Bundle Identifier.
-4. Select your iPhone and Run. To export an IPA, use Product > Archive > Distribute App and a valid signing method.
+1. Determines if iOS reports an available **wired Ethernet path** via `NWPathMonitor(requiredInterfaceType: .wiredEthernet)`.
+2. Reads an IPv4 address for the specific interface name reported by the wired path, when the OS exposes one.
+3. If a wired path exists, tests TCP to `1.1.1.1:443` and `8.8.8.8:443` with `NWParameters.requiredInterfaceType = .wiredEthernet` to prevent cellular/Wi-Fi fallback.
+4. Checks system DNS for `example.com` (this DNS lookup **is not constrained to Ethernet**).
+5. Presents test results, exports a shareable text report, and stores up to 30 checks locally.
 
-This ZIP is source code, not a signed IPA. It was not compiled or tested on an iPhone in this environment. iOS may choose Wi-Fi/cellular routes even with Ethernet attached. An external USB-C Ethernet adapter's compatibility depends on iPhone and adapter hardware.
+TCP timings measure the TCP handshake, not ICMP ping, physical Ethernet speed or throughput. Firewalls can prevent a successful TCP result even on functioning LANs. iOS does not expose physical switch port, LLDP/CDP, PoE measurement, cable length or VLAN configuration through generic adapter APIs.
 
-## Not supported in 0.0.1
-LLDP/CDP capture, physical switch/port detection, untagged VLAN ID, PoE voltage, wiremap, cable length, physical negotiated link speed, true ICMP ping, PDF export. iOS does not expose the required low-level capabilities to ordinary third-party apps through a generic Ethernet adapter.
+## How to build an unsigned IPA
 
-## Branding
-Name: NetPulse. Deep blue / cyan palette. Pulse-in-a-port symbol, supplied as 1024px icon. Native iOS design with grouped backgrounds and adaptive appearance.
+`GitHub Actions > Build unsigned IPA > Run workflow`, or push to main. Download **NetPulse-unsigned-IPA** from the successful run's Artifacts. Extract the ZIP for `NetPulse-0.0.2-unsigned.ipa`. Sign via your own sideloading tool and Apple ID.
 
-## Build IPA using GitHub Actions and Windows
-1. Extract the ZIP into a normal local folder, not OneDrive if possible.
-2. With Git for Windows installed, right-click `UPLOAD_TO_GITHUB.ps1` > Run with PowerShell (or run it from a PowerShell session in that folder). Authenticate with GitHub if asked.
-3. Visit https://github.com/Donacgreece/NetPulse/actions and choose the `Build unsigned IPA` run triggered by the push.
-4. If it succeeds, download the `NetPulse-unsigned-IPA` artifact and extract the IPA from the artifact ZIP.
-5. Sign and install the **unsigned** IPA using your existing sideloading workflow and free Apple ID. This does not remove the approximately 7-day signing expiry.
+This project is **not** verified on a physical phone or compiled locally. The Actions build is the macOS compilation test.
 
-Note: GitHub Actions has NOT been run or validated yet. App compilation or sideload compatibility may require corrections.
+## Local development
+
+Install Xcode and XcodeGen on macOS, run `xcodegen generate` then open `NetPulse.xcodeproj`. Deployment target iOS 17. Code signing is disabled only in the Actions build.
+
+## Files
+
+- `NetPulse/ContentView.swift`: redesigned SwiftUI interface
+- `NetPulse/NetworkEngine.swift`: wired-path monitor and tests
+- `NetPulse/Assets.xcassets`: new app branding
+- `.github/workflows/build-ipa.yml`: automatic unsigned IPA build
+- `UPLOAD_TO_GITHUB.ps1`: Windows upload script

@@ -2,158 +2,182 @@ import Foundation
 import Network
 import Darwin
 
-struct InterfaceInfo: Identifiable {
-    let id: String
-    let name: String
-    let addresses: [String]
-    var ethernet: Bool { name.hasPrefix("en") }
+struct ProbeResult: Identifiable, Codable {
+    var id = UUID()
+    let title: String
+    let detail: String
+    let success: Bool
+    let note: String
 }
 
-struct TestRecord: Identifiable, Codable {
+struct ScanSnapshot: Identifiable, Codable {
     var id = UUID()
     let date: Date
-    let name: String
-    let result: String
-    let passed: Bool
+    let ethernetAvailable: Bool
+    let address: String
+    let results: [ProbeResult]
+    var passed: Int { results.filter(\.success).count }
 }
 
 @MainActor final class NetworkEngine: ObservableObject {
-    @Published var interfaces: [InterfaceInfo] = []
-    @Published var pathDescription = "Checking…"
-    @Published var connectionType = "Unknown"
-    @Published var isOnline = false
-    @Published var records: [TestRecord] = []
-    @Published var isRunning = false
-    private let monitor = NWPathMonitor()
-    private let queue = DispatchQueue(label: "netpulse.path")
-    private let storageKey = "netpulse.records.v1"
+    @Published private(set) var ethernetAvailable = false
+    @Published private(set) var ethernetInterfaceName: String?
+    @Published private(set) var isScanning = false
+    @Published private(set) var currentStep = ""
+    @Published private(set) var latest: ScanSnapshot?
+    @Published private(set) var history: [ScanSnapshot] = []
+
+    private let ethernetMonitor = NWPathMonitor(requiredInterfaceType: .wiredEthernet)
+    private let monitorQueue = DispatchQueue(label: "netpulse.ethernet.monitor")
+    private let historyKey = "netpulse.scan.history.v2"
 
     init() {
-        if let data = UserDefaults.standard.data(forKey: storageKey), let saved = try? JSONDecoder().decode([TestRecord].self, from: data) { records = saved }
-        refreshInterfaces()
-        monitor.pathUpdateHandler = { [weak self] path in
+        if let data = UserDefaults.standard.data(forKey: historyKey),
+           let saved = try? JSONDecoder().decode([ScanSnapshot].self, from: data) {
+            history = saved
+            latest = saved.first
+        }
+        ethernetMonitor.pathUpdateHandler = { [weak self] path in
             Task { @MainActor [weak self] in
-                self?.isOnline = path.status == .satisfied
-                self?.pathDescription = path.status == .satisfied ? "Network available" : "No network connection"
-                self?.connectionType = path.usesInterfaceType(.wiredEthernet) ? "Ethernet" : path.usesInterfaceType(.wifi) ? "Wi-Fi" : path.usesInterfaceType(.cellular) ? "Cellular" : "Other / Disconnected"
-                self?.refreshInterfaces()
+                self?.ethernetAvailable = path.status == .satisfied
+                self?.ethernetInterfaceName = path.availableInterfaces.first(where: { $0.type == .wiredEthernet })?.name
             }
         }
-        monitor.start(queue: queue)
+        ethernetMonitor.start(queue: monitorQueue)
     }
 
-    func refreshInterfaces() {
-        var pointer: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&pointer) == 0, let first = pointer else { return }
-        defer { freeifaddrs(pointer) }
-        var grouped: [String: [String]] = [:]
-        var current: UnsafeMutablePointer<ifaddrs>? = first
-        while let node = current {
-            let entry = node.pointee
-            if let address = entry.ifa_addr {
-                let family = Int32(address.pointee.sa_family)
-                if family == AF_INET || family == AF_INET6 {
-                    var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-                    let length = family == AF_INET ? socklen_t(MemoryLayout<sockaddr_in>.size) : socklen_t(MemoryLayout<sockaddr_in6>.size)
-                    if getnameinfo(address, length, &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0 {
-                        let name = String(cString: entry.ifa_name)
-                        grouped[name, default: []].append(String(cString: host))
+    deinit { ethernetMonitor.cancel() }
+
+    private func ethernetIPv4() -> String? {
+        guard let ethernetInterfaceName else { return nil }
+        var head: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&head) == 0, let start = head else { return nil }
+        defer { freeifaddrs(head) }
+        var cursor: UnsafeMutablePointer<ifaddrs>? = start
+        while let pointer = cursor {
+            let item = pointer.pointee
+            if let addr = item.ifa_addr, Int32(addr.pointee.sa_family) == AF_INET {
+                let name = String(cString: item.ifa_name)
+                // iOS uses en interfaces for both wired and Wi-Fi. Only show an address
+                // when an actual wired Ethernet route has been reported by Network.framework.
+                if name == ethernetInterfaceName {
+                    var buffer = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+                    if getnameinfo(addr, socklen_t(MemoryLayout<sockaddr_in>.size), &buffer, socklen_t(buffer.count), nil, 0, NI_NUMERICHOST) == 0 {
+                        let value = String(cString: buffer)
+                        if !value.hasPrefix("169.254.") { return value }
                     }
                 }
             }
-            current = entry.ifa_next
+            cursor = item.ifa_next
         }
-        interfaces = grouped.map { InterfaceInfo(id: $0.key, name: $0.key, addresses: $0.value.sorted()) }.sorted { $0.name < $1.name }
+        return nil
     }
 
-    private func add(_ name: String, _ result: String, _ passed: Bool) {
-        records.insert(TestRecord(date: Date(), name: name, result: result, passed: passed), at: 0)
-        if records.count > 150 { records = Array(records.prefix(150)) }
-        if let data = try? JSONEncoder().encode(records) { UserDefaults.standard.set(data, forKey: storageKey) }
-    }
+    func runCheck() async {
+        guard !isScanning else { return }
+        isScanning = true
+        defer { isScanning = false; currentStep = "" }
 
-    func clearHistory() { records = []; UserDefaults.standard.removeObject(forKey: storageKey) }
-
-    func dnsLookup(_ hostname: String) async {
-        let host = hostname.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !host.isEmpty else { add("DNS Lookup", "Enter a hostname", false); return }
-        isRunning = true
-        let result: String = await Task.detached(priority: .userInitiated) {
-            var hints = addrinfo()
-            hints.ai_family = AF_UNSPEC
-            hints.ai_socktype = SOCK_STREAM
-            var res: UnsafeMutablePointer<addrinfo>?
-            let code = getaddrinfo(host, nil, &hints, &res)
-            guard code == 0, let first = res else { return "DNS failed (\(code))" }
-            defer { freeaddrinfo(res) }
-            var found = Set<String>()
-            var current: UnsafeMutablePointer<addrinfo>? = first
-            while let node = current {
-                if let addr = node.pointee.ai_addr {
-                    var output = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-                    if getnameinfo(addr, node.pointee.ai_addrlen, &output, socklen_t(output.count), nil, 0, NI_NUMERICHOST) == 0 {
-                        found.insert(String(cString: output))
-                    }
-                }
-                current = node.pointee.ai_next
-            }
-            return found.sorted().joined(separator: ", ")
-        }.value
-        add("DNS: \(host)", result, !result.hasPrefix("DNS failed"))
-        isRunning = false
-    }
-
-    func tcpTest(host: String, port: UInt16) async {
-        let target = host.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !target.isEmpty, port > 0, let nwPort = NWEndpoint.Port(rawValue: port) else { add("TCP Test", "Invalid host or port", false); return }
-        isRunning = true
-        let started = Date()
-        let result = await withCheckedContinuation { (continuation: CheckedContinuation<(Bool, String), Never>) in
-            let connection = NWConnection(host: NWEndpoint.Host(target), port: nwPort, using: .tcp)
-            let q = DispatchQueue(label: "netpulse.tcp.test")
-            let lock = NSLock()
-            var finished = false
-            func finish(_ success: Bool, _ message: String) {
-                lock.lock(); defer { lock.unlock() }
-                guard !finished else { return }
-                finished = true
-                connection.stateUpdateHandler = nil
-                connection.cancel()
-                continuation.resume(returning: (success, message))
-            }
-            connection.stateUpdateHandler = { state in
-                switch state {
-                case .ready: finish(true, String(format: "Connected in %.0f ms", Date().timeIntervalSince(started) * 1000))
-                case .failed(let error): finish(false, error.localizedDescription)
-                case .cancelled: finish(false, "Connection cancelled")
-                default: break
-                }
-            }
-            connection.start(queue: q)
-            q.asyncAfter(deadline: .now() + 7) { finish(false, "Timed out after 7 seconds") }
+        currentStep = "Checking USB-C Ethernet…"
+        // Monitor can receive its first update asynchronously.
+        try? await Task.sleep(nanoseconds: 350_000_000)
+        let plugged = ethernetAvailable
+        var results: [ProbeResult] = []
+        let address = plugged ? (ethernetIPv4() ?? "Not exposed") : "Unavailable"
+        if !plugged {
+            results.append(ProbeResult(title: "Ethernet link", detail: "No active wired route", success: false, note: "Connect a compatible USB-C Ethernet adapter and active LAN cable. Wi-Fi and cellular are not tested."))
+        } else {
+            results.append(ProbeResult(title: "Ethernet link", detail: "Wired path available", success: true, note: "Verified through Network.framework's wired Ethernet path monitor."))
+            currentStep = "Testing LAN connection…"
+            let local = await tcpConnect(host: "1.1.1.1", port: 443, timeout: 6)
+            results.append(ProbeResult(title: "Ethernet TCP reachability", detail: local.message, success: local.ok, note: "Attempts a TCP connection to 1.1.1.1:443 forced through wired Ethernet. This is not ICMP ping."))
+            currentStep = "Checking alternative destination…"
+            let backup = await tcpConnect(host: "8.8.8.8", port: 443, timeout: 6)
+            results.append(ProbeResult(title: "Second route test", detail: backup.message, success: backup.ok, note: "Attempts TCP to 8.8.8.8:443 through wired Ethernet. Firewalls may block this test."))
+            currentStep = "Resolving DNS…"
+            let dns = await resolve("example.com")
+            results.append(ProbeResult(title: "DNS resolution", detail: dns.message, success: dns.ok, note: "System DNS resolution. iOS may use another interface or private DNS for this request."))
         }
-        add("TCP: \(target):\(port)", result.1, result.0)
-        isRunning = false
+        let snapshot = ScanSnapshot(date: Date(), ethernetAvailable: plugged, address: address, results: results)
+        latest = snapshot
+        history.insert(snapshot, at: 0)
+        history = Array(history.prefix(30))
+        if let data = try? JSONEncoder().encode(history) { UserDefaults.standard.set(data, forKey: historyKey) }
     }
 
-    func httpTest() async {
-        isRunning = true
-        let start = Date()
-        do {
-            var request = URLRequest(url: URL(string: "https://www.apple.com/library/test/success.html")!)
-            request.timeoutInterval = 10
-            request.cachePolicy = .reloadIgnoringLocalCacheData
-            let (_, response) = try await URLSession.shared.data(for: request)
-            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            add("HTTPS Connectivity", "HTTP \(status), \(Int(Date().timeIntervalSince(start) * 1000)) ms", (200...299).contains(status))
-        } catch { add("HTTPS Connectivity", error.localizedDescription, false) }
-        isRunning = false
+    func clearHistory() {
+        history = []
+        latest = nil
+        UserDefaults.standard.removeObject(forKey: historyKey)
     }
 
     var report: String {
-        let header = "NetPulse 0.0.1 | Network Report\nGenerated: \(Date().formatted())\nConnection: \(connectionType)\nStatus: \(pathDescription)\n\nINTERFACES\n"
-        let details = interfaces.map { "\($0.name): \($0.addresses.joined(separator: ", "))" }.joined(separator: "\n")
-        let history = records.map { "\($0.date.formatted()) | \($0.passed ? "PASS" : "FAIL") | \($0.name) | \($0.result)" }.joined(separator: "\n")
-        return header + details + "\n\nTEST HISTORY\n" + history
+        guard let scan = latest else { return "NetPulse 0.0.2 | No check yet" }
+        let lines = scan.results.map { "\($0.success ? "PASS" : "CHECK") | \($0.title): \($0.detail)\n\($0.note)" }.joined(separator: "\n\n")
+        return "NetPulse 0.0.2 | Wired network check\nDate: \(scan.date.formatted())\nEthernet available: \(scan.ethernetAvailable)\nInterface address (best effort): \(scan.address)\n\n\(lines)\n\nNote: switch name, port, VLAN, link speed and PoE require switch management or dedicated hardware."
+    }
+
+    private func tcpConnect(host: String, port: UInt16, timeout: TimeInterval) async -> (ok: Bool, message: String) {
+        await withCheckedContinuation { continuation in
+            let parameters = NWParameters.tcp
+            parameters.requiredInterfaceType = .wiredEthernet
+            let connection = NWConnection(host: NWEndpoint.Host(host), port: NWEndpoint.Port(rawValue: port)!, using: parameters)
+            let queue = DispatchQueue(label: "netpulse.check.\(UUID().uuidString)")
+            let gate = CompletionGate()
+            let start = Date()
+            func complete(_ ok: Bool, _ detail: String) {
+                guard gate.markCompleted() else { return }
+                connection.stateUpdateHandler = nil
+                connection.cancel()
+                continuation.resume(returning: (ok, detail))
+            }
+            connection.stateUpdateHandler = { state in
+                switch state {
+                case .ready: complete(true, String(format: "Connected in %.0f ms", Date().timeIntervalSince(start) * 1000))
+                case .failed(let error): complete(false, error.localizedDescription)
+                case .cancelled: complete(false, "Cancelled")
+                default: break
+                }
+            }
+            connection.start(queue: queue)
+            queue.asyncAfter(deadline: .now() + timeout) { complete(false, "No response within \(Int(timeout))s") }
+        }
+    }
+
+    private func resolve(_ hostname: String) async -> (ok: Bool, message: String) {
+        await Task.detached(priority: .userInitiated) {
+            var hints = addrinfo()
+            hints.ai_family = AF_UNSPEC
+            hints.ai_socktype = SOCK_STREAM
+            var answer: UnsafeMutablePointer<addrinfo>?
+            let error = getaddrinfo(hostname, nil, &hints, &answer)
+            guard error == 0, let first = answer else { return (false, "DNS failed (\(error))") }
+            defer { freeaddrinfo(first) }
+            var names: [String] = []
+            var item: UnsafeMutablePointer<addrinfo>? = first
+            while let current = item {
+                if let address = current.pointee.ai_addr {
+                    var result = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+                    if getnameinfo(address, current.pointee.ai_addrlen, &result, socklen_t(result.count), nil, 0, NI_NUMERICHOST) == 0 {
+                        let text = String(cString: result)
+                        if !names.contains(text) { names.append(text) }
+                    }
+                }
+                item = current.pointee.ai_next
+            }
+            return (true, names.prefix(2).joined(separator: ", "))
+        }.value
+    }
+}
+
+private final class CompletionGate {
+    private let lock = NSLock()
+    private var completed = false
+    func markCompleted() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if completed { return false }
+        completed = true
+        return true
     }
 }
