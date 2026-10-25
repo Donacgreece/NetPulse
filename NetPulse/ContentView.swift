@@ -19,7 +19,7 @@ struct ContentView: View {
                         }.frame(width: 50, height: 50)
                         VStack(alignment: .leading, spacing: 3) {
                             Text("NetPulse").font(.title2.bold())
-                            Text("Switch & Port Inspector").font(.caption).foregroundStyle(.secondary)
+                            Text("Ethernet & Switch Diagnostics").font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
                         Button { showingSettings = true } label: {
@@ -30,9 +30,9 @@ struct ContentView: View {
                         Image(systemName: "cable.connector.horizontal")
                             .font(.system(size: 48)).foregroundStyle(blue)
                             .frame(height: 80)
-                        Text("Inspect your Ethernet port").font(.title2.bold())
+                        Text("Check Ethernet connection").font(.title2.bold())
                             .multilineTextAlignment(.center)
-                        Text("Connect USB-C Ethernet, then inspect accessible managed switches using SNMPv3.")
+                        Text("Check the wired connection. SNMPv3 can inspect a switch only when its management address is reachable.")
                             .font(.subheadline).foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                         HStack(spacing: 8) {
@@ -96,10 +96,10 @@ struct ContentView: View {
                         .background(Color(uiColor:.secondarySystemGroupedBackground),in:RoundedRectangle(cornerRadius:23))
                     }
                     if inspector.completed && inspector.switches.isEmpty {
-                        ContentUnavailableView("No switches discovered",systemImage:"network.slash",
-                            description:Text("Check SNMPv3 credentials, management network reachability, configured hosts and SNMP access rules."))
+                        ContentUnavailableView("Switch not identified",systemImage:"network.slash",
+                            description:Text("The iPhone cannot identify the physical switch using SNMP credentials alone. A known management address or special Ethernet frame access is required."))
                     }
-                    Text("v0.0.4 · SNMPv3 SHA-256 / AES-128. Switch port and VLAN are shown only when SNMP tables allow a defensible match. Cable wiremap and TDR require dedicated hardware.")
+                    Text("v0.0.5 · SNMPv3 SHA-256 / AES-128. Switch port and VLAN are shown only when SNMP tables allow a defensible match. Cable wiremap and TDR require dedicated hardware.")
                         .font(.caption2).foregroundStyle(.tertiary)
                 }.padding(20)
             }
@@ -116,7 +116,7 @@ struct ContentView: View {
         }.font(.subheadline)
     }
     private func report(_ s: SwitchReading) -> String {
-        "NetPulse 0.0.3\nSwitch: \\(s.name) (\\(s.address))\nPort: \\(s.interfaceName)\nVLAN: \\(s.vlan)\nSpeed: \\(s.speed)\nStatus: \\(s.status)\nErrors: \\(s.errors)\nMatch: \\(s.confidence)"
+        "NetPulse 0.0.5\nSwitch: \\(s.name) (\\(s.address))\nPort: \\(s.interfaceName)\nVLAN: \\(s.vlan)\nSpeed: \\(s.speed)\nStatus: \\(s.status)\nErrors: \\(s.errors)\nMatch: \\(s.confidence)"
     }
     private var settingsSheet: some View {
         NavigationStack {
@@ -133,9 +133,9 @@ struct ContentView: View {
                     TextEditor(text:$settings.manualHosts).frame(minHeight:90)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                    Toggle("Discover first 64 addresses of local /24",isOn:$settings.scanSubnet)
+                    Text("No subnet scanning. Enter only approved switch management addresses for optional SNMP diagnostics.").font(.footnote).foregroundStyle(.secondary)
                 } header: { Text("Switch management addresses") } footer: {
-                    Text("Enter IPs separated by commas, spaces or new lines. Automatic discovery is best effort and assumes /24. Only use on networks where scanning is authorized. An unreachable management VLAN cannot be discovered through SNMP.")
+                    Text("SNMPv3 credentials do not locate the cable's opposite end. Address information is needed for optional management queries. No scanning is performed.")
                 }
                 Section("Limits") {
                     Text("Physical port identification depends on bridge forwarding and ARP tables. Discovery may find a switch but not your port. VLAN PVID is reported only where supported; the VLAN of the iPhone itself cannot be inferred reliably in every topology.")

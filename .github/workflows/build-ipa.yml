@@ -35,7 +35,14 @@ jobs:
       - name: Build iOS app without code signing
         run: |
           set -o pipefail
-          xcodebuild -project NetPulse.xcodeproj -scheme NetPulse -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+          xcodebuild -project NetPulse.xcodeproj -scheme NetPulse -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build-output.log
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NetPulse-build-log
+          path: build-output.log
+          if-no-files-found: ignore
       - name: Package unsigned IPA
         run: |
           set -e
@@ -44,9 +51,9 @@ jobs:
           mkdir -p packaging/Payload
           ditto "$APP" packaging/Payload/NetPulse.app
           cd packaging
-          zip -qr ../NetPulse-0.0.4-unsigned.ipa Payload
+          zip -qr ../NetPulse-0.0.5-unsigned.ipa Payload
       - uses: actions/upload-artifact@v4
         with:
           name: NetPulse-unsigned-IPA
-          path: NetPulse-0.0.4-unsigned.ipa
+          path: NetPulse-0.0.5-unsigned.ipa
           if-no-files-found: error

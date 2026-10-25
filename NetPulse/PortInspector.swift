@@ -43,29 +43,29 @@ import Darwin
     }
     func inspect(_ profile: SNMPProfile) async {
         guard !scanning else { return }
-        scanning = true; completed = false; switches = []
+        scanning = true; completed = false; switches = []; localIP = "Not detected"
         defer { scanning = false; completed = true }
-        guard ethernet else { status = "No active wired Ethernet route"; return }
+        guard ethernet else { status = "No active wired Ethernet route. Check the USB-C adapter and cable."; return }
         guard !profile.username.isEmpty, !profile.authPassword.isEmpty, !profile.privacyPassword.isEmpty else {
             status = "Configure SNMPv3 credentials first"; return
         }
         localIP = interfaceIP() ?? "Not detected"
-        var hosts = profile.manualHosts.split(whereSeparator: { $0 == "," || $0 == "\n" || $0 == " " }).map(String.init)
-        // Explicitly opted in: limited same-subnet discovery (first 64 addresses).
-        // Reachability is not proof of SNMP access; the secure SNMP probe determines that.
-        if profile.scanSubnet, let octets = parseIPv4(localIP) {
-            let base = octets.prefix(3).map(String.init).joined(separator:".")
-            hosts += (1...64).map { "\(base).\($0)" }
+        // Deliberately do not scan the local subnet. SNMPv3 is a management
+        // protocol, not a link-neighbor discovery protocol on iOS.
+        let hosts = Array(Set(profile.manualHosts.split(whereSeparator: {
+            $0 == "," || $0 == "\n" || $0 == " "
+        }).map(String.init).filter { parseIPv4($0) != nil })).sorted()
+        guard !hosts.isEmpty else {
+            status = "No switch address is known. iOS cannot read LLDP/CDP frames with standard app privileges. SNMP credentials alone cannot identify the cable's far end."
+            return
         }
-        hosts = Array(Set(hosts.filter { parseIPv4($0) != nil })).sorted()
-        guard !hosts.isEmpty else { status = "Add switch IPs or enable limited discovery"; return }
         for (idx, host) in hosts.enumerated() {
             status = "Querying \(idx+1) of \(hosts.count): \(host)"
             if let item = await worker.inspect(host:host,localIP:localIP == "Not detected" ? "":localIP,profile:profile) {
                 switches.append(item)
             }
         }
-        status = switches.isEmpty ? "No SNMPv3 switches responded" : "Found \(switches.count) switch(es)"
+        status = switches.isEmpty ? "No SNMPv3 response from configured switch address(es). Confirm UDP 161 access, routing and SHA-256/AES-128 compatibility." : "Found \(switches.count) switch(es)"
     }
     private func parseIPv4(_ ip: String) -> [UInt8]? {
         let parts = ip.split(separator:".")

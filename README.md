@@ -1,21 +1,15 @@
-# NetPulse 0.0.4 | iOS SNMPv3 beta
+# NetPulse 0.0.5
 
-Source build for native SwiftUI iPhone network diagnostics with SHA-256 authentication and AES-128 privacy via SwiftSnmpKit. Compatible with iOS 17+ (subject to successful Xcode build).
+Native SwiftUI iOS diagnostic app, iOS 17+. Includes wired interface checks, secure SNMPv3 SHA-256/AES-128 credentials in Keychain and optional SNMP queries to explicitly known management hosts.
 
-## Fixes from build failures
-- SwiftSnmpKit local package manifest patched to iOS 13 (main app targets iOS 17).
-- Swift async nil-coalescing autoclosure compile error fixed in SNMPService.swift.
-- Version bumped to 0.0.4 and artifact output renamed.
-- Build uses Xcode 16.4 macOS runner and outputs unsigned IPA to GitHub Actions artifacts.
+## Important technical constraint
 
-## SNMPv3 settings
-Open Settings (gear icon), enter username, authentication password (SHA-256), privacy password (AES-128), and any switch management IPs, then tap Save. Values are stored in the iOS Keychain (ThisDeviceOnly), and reloaded on subsequent launches. Do not enter credentials in source files or GitHub.
+A standard iPhone app using an ordinary USB-C Ethernet dongle cannot promise direct switch identity, physical port or VLAN from credentials alone. SNMPv3 requires a destination address. LLDP/CDP raw Ethernet frame access requires an Apple-restricted capability. This version deliberately **does not scan subnets or fabricate switch/port results**.
 
-## Important limitations
-- Without known reachable SNMP management addresses, discovering switches on another VLAN is not generally possible. The optional first-64-host subnet search may miss relevant devices.
-- Switch identity/port/VLAN depend on exposed SNMP tables and the ARP-to-MAC-to-FDB mapping. A switch may respond without enabling exact physical port matching.
-- No physical PoE voltage, cable wiremap, or TDR tests without dedicated hardware.
-- This package is source code, not an already-built IPA. A passing Xcode build and real-hardware SNMP tests are still required.
+## Build
 
-## Upload and build
-Extract zip, run `UPLOAD_TO_GITHUB.ps1` from the project directory, then view Actions in `Donacgreece/NetPulse`. After the workflow succeeds, download and unzip `NetPulse-unsigned-IPA` artifact. Sign IPA with your own Apple ID in your chosen sideloading tool.
+Run the GitHub Actions `Build unsigned IPA` workflow. Download the artifact and sign the IPA with your own Apple ID. This package has been statically checked but has **not** been compiled on Xcode in the current environment or tested on actual switches.
+
+## Notes
+
+Switch port matching when a known SNMP host is reachable is best effort using ARP and forwarding tables, not a substitute for physical link testing. Wiremap, TDR and PoE voltage require specialized hardware. Make sure use of SNMP and management access is authorized.
