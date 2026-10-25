@@ -1,4 +1,4 @@
-﻿name: Build unsigned IPA
+name: Build unsigned IPA
 on:
   push:
     branches: [main]
@@ -22,7 +22,7 @@ jobs:
           source = manifest.read_text()
           source = source.replace(
               ".macOS(.v10_15)",
-              ".iOS(.v17), .macOS(.v10_15)"
+              ".iOS(.v13), .macOS(.v10_15)"
           )
           manifest.write_text(source)
 
