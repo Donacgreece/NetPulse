@@ -11,16 +11,22 @@ settings:
     INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
     INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
     INFOPLIST_KEY_UILaunchScreen_Generation: YES
+packages:
+  SwiftSnmpKit:
+    url: https://github.com/darrellroot/SwiftSnmpKit.git
+    branch: main
 targets:
   NetPulse:
     type: application
+    dependencies:
+      - package: SwiftSnmpKit
     platform: iOS
     sources:
       - path: NetPulse
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.netpulse.ios
-        MARKETING_VERSION: 0.0.2
-        CURRENT_PROJECT_VERSION: 2
+        MARKETING_VERSION: 0.0.3
+        CURRENT_PROJECT_VERSION: 3
         INFOPLIST_KEY_CFBundleDisplayName: NetPulse
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: "NetPulse tests connections to network devices that you specify."
