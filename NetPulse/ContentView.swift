@@ -99,7 +99,7 @@ struct ContentView: View {
                         ContentUnavailableView("No switches discovered",systemImage:"network.slash",
                             description:Text("Check SNMPv3 credentials, management network reachability, configured hosts and SNMP access rules."))
                     }
-                    Text("v0.0.3 · SNMPv3 SHA-256 / AES-128. Switch port and VLAN are shown only when SNMP tables allow a defensible match. Cable wiremap and TDR require dedicated hardware.")
+                    Text("v0.0.4 · SNMPv3 SHA-256 / AES-128. Switch port and VLAN are shown only when SNMP tables allow a defensible match. Cable wiremap and TDR require dedicated hardware.")
                         .font(.caption2).foregroundStyle(.tertiary)
                 }.padding(20)
             }

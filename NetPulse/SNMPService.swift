@@ -95,8 +95,14 @@ actor SNMPService {
             if let bridgePort = await numeric(host,"\(bridgeFDB).\(suffix)",profile), bridgePort > 0,
                let ifIndex = await numeric(host,"\(bridgeIfIndex).\(bridgePort)",profile) {
                 reading.portIndex = ifIndex
-                reading.interfaceName = value(await get(host,"1.3.6.1.2.1.31.1.1.1.1.\(ifIndex)",profile)) ??
-                    value(await get(host,"1.3.6.1.2.1.2.2.1.2.\(ifIndex)",profile)) ?? "ifIndex \(ifIndex)"
+                let highCapacityName = value(await get(host,"1.3.6.1.2.1.31.1.1.1.1.\(ifIndex)",profile))
+                let basicName: String?
+                if highCapacityName == nil {
+                    basicName = value(await get(host,"1.3.6.1.2.1.2.2.1.2.\(ifIndex)",profile))
+                } else {
+                    basicName = nil
+                }
+                reading.interfaceName = highCapacityName ?? basicName ?? "ifIndex \(ifIndex)"
                 reading.confidence = "Port matched via ARP and bridge FDB"
                 if let speed = await numeric(host,"1.3.6.1.2.1.31.1.1.1.15.\(ifIndex)",profile), speed > 0 {
                     reading.speed = "\(speed) Mbps (interface reported)"

@@ -12,28 +12,24 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install XcodeGen
         run: brew install xcodegen
-      - name: Fix SwiftSnmpKit iOS compatibility
+      - name: Patch SwiftSnmpKit iOS deployment target
+        shell: bash
         run: |
+          set -euo pipefail
           git clone --depth 1 https://github.com/darrellroot/SwiftSnmpKit.git Vendor/SwiftSnmpKit
-          python3 - <<'PY'
+          python3 - <<'PYCODE'
           from pathlib import Path
-
-          manifest = Path("Vendor/SwiftSnmpKit/Package.swift")
-          source = manifest.read_text()
-          source = source.replace(
-              ".macOS(.v10_15)",
-              ".iOS(.v13), .macOS(.v10_15)"
-          )
-          manifest.write_text(source)
-
-          project = Path("project.yml")
-          source = project.read_text()
-          source = source.replace(
-              "url: https://github.com/darrellroot/SwiftSnmpKit.git\n    branch: main",
-              "path: Vendor/SwiftSnmpKit"
-          )
-          project.write_text(source)
-          PY
+          manifest = Path('Vendor/SwiftSnmpKit/Package.swift')
+          text = manifest.read_text()
+          old = '.macOS(.v10_15)'
+          assert old in text, 'Unexpected SwiftSnmpKit manifest'
+          manifest.write_text(text.replace(old, '.iOS(.v13), .macOS(.v10_15)', 1))
+          project = Path('project.yml')
+          text = project.read_text()
+          old = 'url: https://github.com/darrellroot/SwiftSnmpKit.git\n    branch: main'
+          assert old in text, 'Unexpected XcodeGen package declaration'
+          project.write_text(text.replace(old, 'path: Vendor/SwiftSnmpKit', 1))
+          PYCODE
       - name: Generate Xcode project
         run: xcodegen generate
       - name: Build iOS app without code signing
@@ -48,10 +44,9 @@ jobs:
           mkdir -p packaging/Payload
           ditto "$APP" packaging/Payload/NetPulse.app
           cd packaging
-          zip -qr ../NetPulse-0.0.3-unsigned.ipa Payload
+          zip -qr ../NetPulse-0.0.4-unsigned.ipa Payload
       - uses: actions/upload-artifact@v4
         with:
           name: NetPulse-unsigned-IPA
-          path: NetPulse-0.0.3-unsigned.ipa
+          path: NetPulse-0.0.4-unsigned.ipa
           if-no-files-found: error
-

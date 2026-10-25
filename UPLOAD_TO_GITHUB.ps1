@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 $source = $PSScriptRoot
 $repo = "https://github.com/Donacgreece/NetPulse.git"
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw "Git is not installed." }
-$target = Join-Path $env:TEMP "NetPulse-upload-0.0.3"
+$target = Join-Path $env:TEMP "NetPulse-upload-0.0.4"
 if (Test-Path $target) { Remove-Item $target -Recurse -Force }
 git clone --branch main $repo $target
 if ($LASTEXITCODE -ne 0) { throw "Git clone failed. Check GitHub authentication." }
@@ -20,11 +20,11 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "git add failed" }
     $changes = git status --porcelain
     if ($changes) {
-        git -c user.name="Donacgreece" -c user.email="donacgreece@users.noreply.github.com" commit -m "NetPulse 0.0.3 redesigned Ethernet checker"
+        git -c user.name="Donacgreece" -c user.email="donacgreece@users.noreply.github.com" commit -m "NetPulse 0.0.4 redesigned Ethernet checker"
         if ($LASTEXITCODE -ne 0) { throw "git commit failed" }
         git push origin main
         if ($LASTEXITCODE -ne 0) { throw "git push failed" }
     }
-    Write-Host "SUCCESS: NetPulse 0.0.3 uploaded" -ForegroundColor Green
+    Write-Host "SUCCESS: NetPulse 0.0.4 uploaded" -ForegroundColor Green
 } finally { Pop-Location }
 Start-Process "https://github.com/Donacgreece/NetPulse/actions"
